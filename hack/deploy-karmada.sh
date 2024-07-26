@@ -266,7 +266,10 @@ trap '{ rm -rf ${TEMP_PATH_CRDS}; }' EXIT
 cp -rf "${REPO_ROOT}"/charts/karmada/_crds "${TEMP_PATH_CRDS}"
 util::fill_cabundle "${ROOT_CA_FILE}" "${TEMP_PATH_CRDS}/_crds/patches/webhook_in_resourcebindings.yaml"
 util::fill_cabundle "${ROOT_CA_FILE}" "${TEMP_PATH_CRDS}/_crds/patches/webhook_in_clusterresourcebindings.yaml"
-installCRDs "karmada-apiserver" "${TEMP_PATH_CRDS}"
+echo "About to install CRDs"
+installCRDs "${HOST_CLUSTER_NAME}" "${TEMP_PATH_CRDS}"
+# installCRDs "karmada-apiserver" "${TEMP_PATH_CRDS}"
+echo "done with that"
 
 # render the caBundle in these apiservice with root ca, then karmada-apiserver can use caBundle to verify corresponding AA's server-cert
 TEMP_PATH_APISERVICE=$(mktemp -d)
@@ -279,28 +282,28 @@ util::fill_cabundle "${ROOT_CA_FILE}" "${TEMP_PATH_APISERVICE}"/karmada-metrics-
 util::fill_cabundle "${ROOT_CA_FILE}" "${TEMP_PATH_APISERVICE}"/karmada-search-apiservice.yaml
 
 # deploy webhook configurations on karmada apiserver
-util::deploy_webhook_configuration "karmada-apiserver" "${ROOT_CA_FILE}" "${REPO_ROOT}/artifacts/deploy/webhook-configuration.yaml"
+util::deploy_webhook_configuration "${HOST_CLUSTER_NAME}" "${ROOT_CA_FILE}" "${REPO_ROOT}/artifacts/deploy/webhook-configuration.yaml"
 
 # deploy APIService on karmada apiserver for karmada-aggregated-apiserver
-kubectl --context="karmada-apiserver" apply -f "${TEMP_PATH_APISERVICE}"/karmada-aggregated-apiserver-apiservice.yaml
+kubectl --context="${HOST_CLUSTER_NAME}" apply -f "${TEMP_PATH_APISERVICE}"/karmada-aggregated-apiserver-apiservice.yaml
 # make sure apiservice for v1alpha1.cluster.karmada.io is Available
-util::wait_apiservice_ready "karmada-apiserver" "${KARMADA_AGGREGATION_APISERVER_LABEL}"
+util::wait_apiservice_ready "${HOST_CLUSTER_NAME}" "${KARMADA_AGGREGATION_APISERVER_LABEL}"
 
 # deploy APIService on karmada apiserver for karmada-search
-kubectl --context="karmada-apiserver" apply -f "${TEMP_PATH_APISERVICE}"/karmada-search-apiservice.yaml
+kubectl --context="${HOST_CLUSTER_NAME}" apply -f "${TEMP_PATH_APISERVICE}"/karmada-search-apiservice.yaml
 # make sure apiservice for v1alpha1.search.karmada.io is Available
-util::wait_apiservice_ready "karmada-apiserver" "${KARMADA_SEARCH_LABEL}"
+util::wait_apiservice_ready "${HOST_CLUSTER_NAME}" "${KARMADA_SEARCH_LABEL}"
 
 # deploy APIService on karmada apiserver for karmada-metrics-adapter
-kubectl --context="karmada-apiserver" apply -f "${TEMP_PATH_APISERVICE}"/karmada-metrics-adapter-apiservice.yaml
+kubectl --context="${HOST_CLUSTER_NAME}" apply -f "${TEMP_PATH_APISERVICE}"/karmada-metrics-adapter-apiservice.yaml
 # make sure apiservice for karmada metrics adapter is Available
-util::wait_apiservice_ready "karmada-apiserver" "${KARMADA_METRICS_ADAPTER_LABEL}"
+util::wait_apiservice_ready "${HOST_CLUSTER_NAME}" "${KARMADA_METRICS_ADAPTER_LABEL}"
 
 # grant the admin clusterrole read and write permissions for Karmada resources
-kubectl --context="karmada-apiserver" apply -f "${REPO_ROOT}/artifacts/deploy/admin-clusterrole-aggregation.yaml"
+kubectl --context="${HOST_CLUSTER_NAME}" apply -f "${REPO_ROOT}/artifacts/deploy/admin-clusterrole-aggregation.yaml"
 
 # deploy cluster proxy rbac for admin
-kubectl --context="karmada-apiserver" apply -f "${REPO_ROOT}/artifacts/deploy/cluster-proxy-admin-rbac.yaml"
+kubectl --context="${HOST_CLUSTER_NAME}" apply -f "${REPO_ROOT}/artifacts/deploy/cluster-proxy-admin-rbac.yaml"
 
 # deploy bootstrap token configuration for registering member clusters with PULL mode
 karmada_ca=$(base64 < "${ROOT_CA_FILE}" | tr -d '\r\n')
@@ -310,7 +313,7 @@ trap '{ rm -rf ${TEMP_PATH_BOOTSTRAP}; }' EXIT
 cp -rf "${REPO_ROOT}"/artifacts/deploy/bootstrap-token-configuration.yaml "${TEMP_PATH_BOOTSTRAP}"/bootstrap-token-configuration-tmp.yaml
 sed -i'' -e "s/{{ca_crt}}/${karmada_ca}/g" "${TEMP_PATH_BOOTSTRAP}"/bootstrap-token-configuration-tmp.yaml
 sed -i'' -e "s|{{apiserver_address}}|${karmada_apiserver_address}|g" "${TEMP_PATH_BOOTSTRAP}"/bootstrap-token-configuration-tmp.yaml
-kubectl --context="karmada-apiserver" apply -f "${TEMP_PATH_BOOTSTRAP}"/bootstrap-token-configuration-tmp.yaml
+kubectl --context="${HOST_CLUSTER_NAME}" apply -f "${TEMP_PATH_BOOTSTRAP}"/bootstrap-token-configuration-tmp.yaml
 
 # deploy controller-manager on host cluster
 kubectl --context="${HOST_CLUSTER_NAME}" apply -f "${REPO_ROOT}/artifacts/deploy/karmada-controller-manager.yaml"
